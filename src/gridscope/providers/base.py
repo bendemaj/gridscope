@@ -1,0 +1,16 @@
+from datetime import datetime
+from typing import Protocol
+
+from gridscope.models import FlowPoint, GenerationPoint, LoadPoint, PricePoint, Series
+
+
+class GridDataProvider(Protocol):
+    async def get_prices(self, zone: str, start: datetime, end: datetime) -> Series[PricePoint]: ...
+    async def get_load(self, zone: str, start: datetime, end: datetime) -> Series[LoadPoint]: ...
+    async def get_generation(
+        self, zone: str, start: datetime, end: datetime
+    ) -> Series[GenerationPoint]: ...
+    async def get_flows(
+        self, from_zone: str, to_zone: str, start: datetime, end: datetime
+    ) -> Series[FlowPoint]: ...
+    async def aclose(self) -> None: ...

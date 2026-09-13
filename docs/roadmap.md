@@ -1,7 +1,8 @@
 # Roadmap
 
-1. **v0.1 validation:** run credentialed Austrian price/load/generation/flow checks,
-   record observed coverage and resolve any real provider-series ambiguities.
+1. **v0.1 validation:** the initial credentialed Austrian checks and system report
+   passed on 13 September 2026. Extend coverage checks across multiple dates, DST
+   transitions and provider revisions.
    Confirm primary-owner reuse conditions and select a software license.
 2. **v0.2:** extend verified German/neighbor coverage, add SMARD, persist historical
    observations and revisions, and add explicit energy-conserving resampling.

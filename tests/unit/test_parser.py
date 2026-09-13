@@ -125,3 +125,40 @@ def test_flow_direction_verified():
     xml = (FIXTURES / "flows.xml").read_bytes().replace(b"10Y1001A1001A82H", b"WRONG")
     with pytest.raises(MalformedResponse):
         parsed("flows", xml)
+
+
+def duplicate_price_xml(*, conflicting=False, sequence="1"):
+    from copy import deepcopy
+    from xml.etree.ElementTree import SubElement, tostring
+
+    from gridscope.providers.entsoe.parser import read_xml
+
+    root = read_xml((FIXTURES / "prices.xml").read_bytes())
+    ts = root.find("TimeSeries")
+    SubElement(ts, "classificationSequence_AttributeInstanceComponent.position").text = sequence
+    other = deepcopy(ts)
+    other.find("mRID").text = "duplicate-2"
+    if conflicting:
+        other.find("Period/Point/price.amount").text = "999"
+    root.append(other)
+    return tostring(root)
+
+
+def test_identical_price_publications_preserve_provenance():
+    points = parsed(xml=duplicate_price_xml())
+    assert len(points) == 4
+    assert points[0].value == -10
+    assert points[0].source_auction_sequence == 1
+    assert points[0].source_series == "1"
+    assert points[0].duplicate_source_series == ("duplicate-2",)
+    assert any("collapsed" in note for note in points[0].notes)
+
+
+def test_conflicting_price_publications_still_fail():
+    with pytest.raises(MalformedResponse, match="Overlapping"):
+        parsed(xml=duplicate_price_xml(conflicting=True))
+
+
+def test_other_auction_sequence_is_not_silently_used():
+    with pytest.raises(MalformedResponse, match="sequence 1"):
+        parsed(xml=duplicate_price_xml(sequence="2"))

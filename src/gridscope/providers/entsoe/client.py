@@ -226,6 +226,11 @@ class ENTSOEProvider:
                 "in_Domain": AREA_CODES[zone],
                 "out_Domain": AREA_CODES[zone],
                 "contract_MarketAgreement.type": "A01",
+                **(
+                    {"classificationSequence_AttributeInstanceComponent.position": "1"}
+                    if zone in {"AT", "DE_LU"}
+                    else {}
+                ),
             },
             zone=zone,
         )

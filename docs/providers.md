@@ -2,7 +2,8 @@
 
 Checked **12 September 2026** against the official documentation linked below.
 The Postman collection was retrieved directly to inspect request examples and
-query-parameter descriptions. No live API credential was available for this build.
+query-parameter descriptions. Live Austrian checks passed on **13 September 2026**
+for prices, load, generation and DE_LU→AT flows over 1 September 2026 (UTC).
 
 ## Query contract
 
@@ -21,8 +22,17 @@ Every request includes `periodStart` and `periodEnd` in UTC `yyyyMMddHHmm` forma
 Prices now cover day-ahead and intraday products, so GridScope explicitly selects
 A01. The current collection documents 100 TimeSeries per price response and an
 `offset` parameter. GridScope follows pages and splits long ranges into 31-day
-queries. It does not select an arbitrary price classification when overlapping
-series are returned: ambiguous overlaps are rejected for investigation.
+queries. For AT and DE_LU, the connector also requests
+`classificationSequence_AttributeInstanceComponent.position=1`, the SDAC market
+identified in ENTSO-E’s official explanatory notes. Sequence 2 is the separate EXAA
+auction. The selected sequence is retained in `source_auction_sequence`.
+
+The live Austrian response contained repeated sequence-1 publications. Only price
+series identical in their XML metadata and values (ignoring the series mRID and
+formatting whitespace) are collapsed within each response. The original mRID
+remains in `source_series`, with repeats in `duplicate_source_series` and a point
+note. Different prices, metadata, or period definitions still trigger overlap
+errors. Nothing is averaged or selected by response order.
 
 Generation series with `inBiddingZone_Domain` represent output; those with only
 `outBiddingZone_Domain` represent consumption and are excluded. Flow API responses
@@ -96,3 +106,5 @@ license is selected by this initial build; choose one deliberately before releas
 - [Terms and free-reuse list](https://transparencyplatform.zendesk.com/hc/en-us/articles/40921911218961-Legal-Terms-and-Conditions)
 - [18 October 2023 free-reuse list PDF](https://transparencyplatform.zendesk.com/hc/en-us/article_attachments/40921869379729)
 - [Official XML examples](https://gitlab.entsoe.eu/transparency/xml-examples)
+
+- [Official explanatory notes: SDAC and EXAA auction sequences](https://eepublicdownloads.blob.core.windows.net/tp-reporting-exports/Explanatory%20Notes.xlsx)

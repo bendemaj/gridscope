@@ -36,6 +36,8 @@ class GenerationType(StrEnum):
 
 class PricePoint(Point):
     zone: ZoneCode
+    source_auction_sequence: int | None = Field(default=None, ge=1)
+    duplicate_source_series: tuple[str, ...] = ()
     currency: Literal["EUR"] = "EUR"
     unit: Literal["EUR/MWh"] = "EUR/MWh"
 

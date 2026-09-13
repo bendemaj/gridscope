@@ -3,7 +3,8 @@
 Every point carries an aware UTC `timestamp` (interval start), nullable finite
 `value`, explicit `unit`, ISO `resolution`, `source`, `source_dataset`, UTC
 `retrieved_at`, `quality` and notes. Optional source document/revision/series/curve
-fields preserve provider provenance. Pydantic models forbid unknown fields and
+fields preserve provider provenance. Price points also retain the auction sequence
+and identifiers of exact duplicate price publications collapsed within a response. Pydantic models forbid unknown fields and
 are frozen; model validation normalizes aware timestamps to UTC.
 
 | Model | Additional fields | Unit / value |

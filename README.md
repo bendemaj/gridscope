@@ -192,12 +192,14 @@ This registry records source information, not legal advice.
 
 ## Current limitations
 
-Live Austrian retrieval requires your token and has not been credential-verified
-in this build environment. Models and routes are verified with mocked HTTP responses.
+Live Austrian prices, load, generation and DE_LU→AT flows were verified on
+13 September 2026 for the UTC day 1 September 2026. Your own token is required.
+The Austrian system report also completed against live data.
 Docker configuration is included; local image validation depends on a running engine.
 No automated currency conversion, implicit resampling, forecast, persistent storage,
-authentication or full-market coverage guarantee. Competing or overlapping provider
-series are rejected rather than silently selecting one. Very large replies are rejected.
+authentication or full-market coverage guarantee. Austrian and DE_LU prices use
+SDAC auction sequence 1. Exact duplicate price publications within a response are
+collapsed with their identifiers retained; conflicting overlaps are rejected. Very large replies are rejected.
 The v0.1 API is intended for local development, not a public multi-tenant service.
 
 ## Roadmap

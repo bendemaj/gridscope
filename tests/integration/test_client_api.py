@@ -67,6 +67,9 @@ async def test_parameters_header_auth_and_cache(caplog):
         assert calls[0].headers["SECURITY_TOKEN"] == "PRIVATE_TEST_TOKEN"
         assert "securityToken" not in calls[0].url.params
         assert calls[0].url.params["contract_MarketAgreement.type"] == "A01"
+        assert (
+            calls[0].url.params["classificationSequence_AttributeInstanceComponent.position"] == "1"
+        )
         assert "PRIVATE_TEST_TOKEN" not in caplog.text
 
 

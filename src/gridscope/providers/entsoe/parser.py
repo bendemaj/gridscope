@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import TypeVar
-from xml.etree.ElementTree import Element, ParseError
+from xml.etree.ElementTree import Element, ParseError, canonicalize, tostring
 
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring
@@ -49,6 +49,17 @@ def series_count(xml: bytes) -> int:
     return len(root.findall("TimeSeries"))
 
 
+def price_series(root: Element) -> list[tuple[Element, tuple[str, ...]]]:
+    """Collapse only structurally identical price publications, retaining their IDs."""
+    groups: dict[str, list[Element]] = {}
+    for ts in root.findall("TimeSeries"):
+        signature = canonicalize(
+            tostring(ts, encoding="unicode"), strip_text=True, exclude_tags={"mRID"}
+        )
+        groups.setdefault(signature, []).append(ts)
+    return [(group[0], tuple(text(ts, "mRID") for ts in group[1:])) for group in groups.values()]
+
+
 def parse(
     xml: bytes,
     model: type[P],
@@ -71,7 +82,12 @@ def parse(
     results: list[P] = []
     seen: set[tuple[datetime, str]] = set()
     try:
-        for ts in root.findall("TimeSeries"):
+        series = (
+            price_series(root)
+            if model is PricePoint
+            else [(ts, ()) for ts in root.findall("TimeSeries")]
+        )
+        for ts, duplicates in series:
             extra: dict[str, object] = {}
             if zone:
                 extra["zone"] = zone
@@ -105,6 +121,11 @@ def parse(
                     or text(ts, "out_Domain.mRID") != AREA_CODES[zone]
                 ):
                     raise MalformedResponse("Unexpected price area.")
+                sequence = text(ts, "classificationSequence_AttributeInstanceComponent.position")
+                if zone in {"AT", "DE_LU"} and sequence not in {"", "1"}:
+                    raise MalformedResponse("Expected SDAC day-ahead price sequence 1.")
+                extra["source_auction_sequence"] = int(sequence) if sequence else None
+                extra["duplicate_source_series"] = duplicates
                 contract = text(ts, "contract_MarketAgreement.type")
                 if contract and contract != "A01":
                     raise MalformedResponse("Expected day-ahead price data.")
@@ -140,6 +161,11 @@ def parse(
                     if not start <= timestamp < end:
                         continue
                     notes: list[str] = []
+                    if duplicates:
+                        notes.append(
+                            "Identical provider price publications collapsed; "
+                            "duplicate series IDs are retained in provenance."
+                        )
                     if curve == "A03" and pos not in values and value is not None:
                         notes.append("Expanded provider-defined constant block (A03).")
                     if extra.get("generation_type") == GenerationType.UNKNOWN:

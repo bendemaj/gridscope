@@ -4,8 +4,10 @@
    passed on 13 September 2026. Extend coverage checks across multiple dates, DST
    transitions and provider revisions.
    Confirm primary-owner reuse conditions and select a software license.
-2. **v0.2:** extend verified German/neighbor coverage, add SMARD, persist historical
-   observations and revisions, and add explicit energy-conserving resampling.
+2. **v0.2 implemented locally:** German/neighbor coverage, SMARD prices/load/
+   generation/physical flows, optional SQLite observations and revisions with
+   as-of reads, and explicit energy-conserving UTC resampling. See the
+   [verified provider coverage and limits](providers.md#v02-coverage).
 3. **v0.3:** add forecast primitives, outages and balancing datasets with provenance.
 4. **v0.4:** expose the existing application service through a thin MCP adapter,
    then webhooks and event detection without duplicating calculations.
@@ -17,4 +19,4 @@ production, imports, interconnector flows, outages, price volatility, balancing
 activation and reserve conditions. Each input needs explicit coverage, timing,
 quality and revision rules. Define an operational target, validate against
 historical events, evaluate uncertainty and benchmark simple baselines before
-publishing a score. No arbitrary weighted score exists in v0.1.
+publishing a score. No arbitrary weighted score exists in v0.2.

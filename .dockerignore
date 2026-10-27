@@ -10,3 +10,6 @@ tests
 examples
 docs
 dist
+data
+*.sqlite*
+*.db*

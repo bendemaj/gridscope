@@ -32,6 +32,7 @@ class GenerationType(StrEnum):
     OTHER = "other"
     ENERGY_STORAGE = "energy_storage"
     UNKNOWN = "unknown"
+    HYDRO = "hydro"  # SMARD aggregates run-of-river and reservoir output.
 
 
 class PricePoint(Point):

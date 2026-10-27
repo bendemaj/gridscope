@@ -24,6 +24,17 @@ class TimeResolution(StrEnum):
     DAY = "P1D"
 
 
+class SourceReference(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    source: str
+    dataset: str
+    document: str | None = None
+    revision: str | None = None
+    series: str | None = None
+    resolution: TimeResolution
+    retrieved_at: UTCDateTime
+
+
 class Point(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
     timestamp: UTCDateTime
@@ -39,6 +50,7 @@ class Point(BaseModel):
     source_series: str | None = None
     source_curve: str | None = None
     notes: tuple[str, ...] = ()
+    input_provenance: tuple[SourceReference, ...] = ()
 
     @model_validator(mode="after")
     def check_missing(self) -> "Point":

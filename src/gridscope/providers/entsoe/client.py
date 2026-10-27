@@ -17,6 +17,7 @@ from gridscope.errors import (
     ProviderRateLimit,
     ProviderRejected,
     ProviderUnavailable,
+    UnsupportedDataset,
 )
 from gridscope.models import FlowPoint, GenerationPoint, LoadPoint, PricePoint, Series, SeriesMeta
 from gridscope.models.common import Point
@@ -30,6 +31,8 @@ ENDPOINT = "https://web-api.tp.entsoe.eu/api"
 
 
 class ENTSOEProvider:
+    name = "ENTSOE"
+
     def __init__(
         self, settings: Settings | None = None, *, transport: httpx.AsyncBaseTransport | None = None
     ):
@@ -37,7 +40,7 @@ class ENTSOEProvider:
         self._http = httpx.AsyncClient(
             timeout=self.settings.timeout_seconds,
             transport=transport,
-            headers={"User-Agent": "GridScope/0.1 (github.com/bendemaj/gridscope)"},
+            headers={"User-Agent": "GridScope/0.2 (github.com/bendemaj/gridscope)"},
         )
         self._cache: OrderedDict[tuple[tuple[str, str], ...], tuple[float, bytes, datetime]] = (
             OrderedDict()
@@ -82,7 +85,7 @@ class ENTSOEProvider:
                     raise ProviderAuthenticationError("ENTSO-E rejected the API token.")
                 if status not in {429, 500, 502, 503, 504}:
                     if len(response.content) > 20_000_000:
-                        raise MalformedResponse("Provider response exceeds the v0.1 size limit.")
+                        raise MalformedResponse("Provider response exceeds the size limit.")
                     root = read_xml(response.content)
                     check_acknowledgement(root)
                     if status != 200:
@@ -216,6 +219,10 @@ class ENTSOEProvider:
         )
 
     async def get_prices(self, zone: str, start: datetime, end: datetime) -> Series[PricePoint]:
+        if zone in {"DE", "LU"}:
+            raise UnsupportedDataset(
+                "DE and LU are country areas; request DE_LU bidding-zone prices."
+            )
         return await self._fetch(
             PricePoint,
             "prices",

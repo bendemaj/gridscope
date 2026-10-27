@@ -8,7 +8,9 @@ class SourceDataset(BaseModel):
     provider: str = "ENTSOE"
     dataset: str
     description: str
-    geographical_coverage: str = "Austria first; other registered zones subject to availability"
+    geographical_coverage: str = (
+        "Germany, Austria and registered neighboring markets; dataset-specific availability"
+    )
     resolutions: tuple[str, ...] = ("PT15M", "PT30M", "PT60M")
     update_frequency: str = "Provider publications and revisions; no guaranteed polling SLA"
     documentation_url: str = DOCS
@@ -39,4 +41,40 @@ SOURCES = [
             "Permitted for eligible listed data under CC-BY-4.0; retain attribution and terms."
         ),
     ),
+]
+
+
+SOURCES += [
+    SourceDataset(
+        provider="SMARD",
+        dataset=dataset,
+        description=description,
+        geographical_coverage=coverage,
+        resolutions=("PT15M",),
+        documentation_url="https://www.smard.de/home/downloadcenter/download-marktdaten",
+        terms_url="https://www.smard.de/home/datennutzung",
+        license="CC BY 4.0",
+        attribution="Bundesnetzagentur | SMARD.de. Normalized by GridScope.",
+        commercial_reuse="Permitted under CC BY 4.0 with attribution and indication of changes.",
+        redistribution="Permitted under CC BY 4.0; retain attribution, license and changes.",
+        verified_on="2026-10-27",
+    )
+    for dataset, description, coverage in [
+        (
+            "prices",
+            "Day-ahead prices at SMARD chart cadence",
+            "DE_LU, AT, BE, CZ, CH, DK1, DK2, FR, HU, IT_NORTH, NL, NO2, PL, SE4, SI",
+        ),
+        ("load", "Realized grid load; MWh converted to average MW", "DE, DE_LU, AT, LU"),
+        (
+            "generation",
+            "Realized generation by SMARD technology; MWh converted to MW",
+            "DE, DE_LU, AT, LU; technologies vary by region",
+        ),
+        (
+            "flows",
+            "Directional physical flows; MWh converted to average MW",
+            "Mapped borders of DE, DE_LU, AT and LU; see provider documentation",
+        ),
+    ]
 ]

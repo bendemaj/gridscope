@@ -3,11 +3,12 @@
 **The open grid intelligence layer.** One typed interface for fragmented European
 electricity-system data, starting with Austria and ENTSO-E.
 
-GridScope v0.1 provides an async Python client, pandas interoperability, a FastAPI
-REST service and deterministic grid metrics. It has no frontend or database requirement.
+GridScope v0.2 provides an async Python client, pandas interoperability, a FastAPI
+REST service, SMARD and ENTSO-E connectors, deterministic grid metrics, explicit
+resampling and optional SQLite history. It has no frontend or external database requirement.
 
 ```text
-ENTSO-E → provider connector → normalization → typed models
+ENTSO-E / SMARD → provider connector → normalization → typed models
                                                  ↓
                                        grid intelligence
                                                  ↓
@@ -28,9 +29,16 @@ cp .env.example .env
 Set `ENTSOE_API_TOKEN` in `.env` or your environment. The project loads `.env` from
 the current working directory. Do not commit it. Obtain REST API access and a token
 using the [official instructions](https://transparencyplatform.zendesk.com/hc/en-us/articles/12845911031188-How-to-get-security-token).
-The API health check and documentation work without credentials; data requests give
-a structured `missing_api_token` error. Credentials travel in the provider's
+The API health check, documentation and SMARD data work without credentials.
+ENTSO-E data requests without a token give a structured `missing_api_token` error. Credentials travel in the provider's
 `SECURITY_TOKEN` header, not URLs or application logs.
+
+On a macOS setup that marks editable-install `.pth` files as hidden, Python can
+report `ModuleNotFoundError: gridscope` after a successful editable install. Use
+`uv sync --locked --no-editable` and add `--no-editable` to `uv run` commands on
+that machine. After editing source, refresh the installed copy with
+`uv sync --locked --no-editable --reinstall-package gridscope`. This workaround
+is unnecessary on installations where editable imports work normally.
 
 ## Python
 
@@ -72,6 +80,86 @@ values retain their native interval duration. No partial-interval prorating occu
 Use aligned boundaries for period aggregates. Ranges are limited to 366 days and
 split into requests of at most 31 days. DST days can contain 23 or 25 hours.
 
+## Germany, neighbors and provider selection
+
+The default remains ENTSO-E. Select `GridScope("smard")` in Python, `provider=smard`
+in REST, or `GRIDSCOPE_PROVIDER=smard` in `.env`. SMARD requires no token. Sources
+never switch automatically: unsupported combinations return `unsupported_dataset`.
+
+Use **DE** for German country load/generation and **DE_LU** for the combined
+Germany–Luxembourg bidding zone, including prices. `LU` represents Luxembourg;
+it has no separate day-ahead price in this registry. `/v1/zones` exposes `area_type`.
+New neighboring bidding zones include FR, BE, NL, PL, DK1, DK2, NO2 and SE4, alongside
+AT, CZ, CH, SK, HU, SI and IT_NORTH. Registration does not guarantee every dataset.
+See the [verified coverage and provider contracts](docs/providers.md#v02-coverage).
+
+```python
+from gridscope import GridScope
+from gridscope.models import TimeResolution
+
+async with GridScope("smard", resolution=TimeResolution.HOUR) as gs:
+    prices = await gs.prices("DE_LU", "2026-09-01", "2026-09-02")
+    load = await gs.load("DE", "2026-09-01", "2026-09-02")
+    residual = await gs.residual_load("DE", "2026-09-01", "2026-09-02")
+```
+
+SMARD load/generation/flow charts publish MWh per 15 minutes; GridScope divides by
+0.25 hours to return MW. Its negative import chart values become positive in the
+named flow direction. Prices remain EUR/MWh. SMARD's quarter-hour price chart can
+repeat older hourly products; the cadence is flagged and is not claimed as native
+auction resolution. SMARD's aggregated `hydro` category excludes pumped storage.
+
+## Historical observations and revisions
+
+Uncomment `GRIDSCOPE_STORAGE_PATH=data/gridscope.sqlite3` in your own `.env` to
+persist successful queries. Alternatively pass `Settings(storage_path=...)` or a
+`SQLiteStore` to the Python client. This is opt-in and adds no database dependency.
+Local database files and journals are ignored by Git and Docker build contexts.
+
+Each successful live query appends the full raw response before filtering and
+resampling. Repeated observations, changed values, nulls, removed technologies,
+source revision IDs and retrieval times remain available. Provider cache hits also
+produce a capture and retain their original retrieval time. Disable the response
+cache or call `clear_cache()` on the provider to request a fresh publication.
+
+```python
+from gridscope import GridScope
+from gridscope.config import Settings
+
+settings = Settings(storage_path="data/gridscope.sqlite3")
+async with GridScope("smard", settings=settings) as gs:
+    await gs.load("DE", "2026-09-01", "2026-09-02")
+    snapshots = gs.history("load", "2026-09-01", "2026-09-02", zone="DE")
+    cutoff = snapshots[-1].recorded_at
+
+async with GridScope("smard", settings=settings, mode="stored", as_of=cutoff) as gs:
+    historic = await gs.load("DE", "2026-09-01", "2026-09-02")
+```
+
+`recorded_at` / `as_of` refer to when this installation captured data, not when the
+provider originally knew it. Stored mode makes no network requests. The newest
+eligible capture replaces its whole requested interval, including omissions.
+Uncaptured dates return `no_data`; captured provider gaps stay missing. Providers,
+datasets, zones and flow directions have separate histories. `history()` returns
+the latest 100 overlapping captures (configurable up to 1,000), in chronological
+order, with their original full query scope. Storage grows with captures; no
+retention job or automatic backfill is scheduled. See [storage details](docs/storage.md).
+
+## Explicit resampling
+
+Use `resolution=TimeResolution.HOUR` on a raw Python query, on `GridScope(...)` for
+all metric inputs, or `resolution=PT60M` in REST. For an already fetched series,
+call `gridscope.resample(series, "PT60M")`. Supported targets are PT15M, PT30M,
+PT60M and P1D. Native data is returned when no resolution is selected.
+
+Duration-weighted average MW preserves energy (`sum(MW × hours)`). Prices use a
+duration-weighted average, not a volume-weighted price. Each technology and flow
+direction stays separate. Gaps/nulls yield null `incomplete` bins. Complete bins
+are `derived` and retain input provenance. Upsampling, overlapping intervals and
+misaligned boundaries are rejected. Bins align to UTC; P1D is exactly 24 UTC hours.
+Local DST days can be resampled into 23 or 25 hourly bins. Local-day price spread
+continues to use its explicit timezone and `period_end`.
+
 ## REST API
 
 ```bash
@@ -93,6 +181,19 @@ curl 'http://localhost:8000/v1/intelligence/net-imports?zone=AT&neighbors=DE_LU&
 curl 'http://localhost:8000/v1/intelligence/price-volatility?zone=AT&window=24&start=2026-09-01&end=2026-09-02'
 ```
 
+All data/intelligence endpoints accept `provider=entsoe|smard`, `mode=live|stored`,
+`as_of=<offset-aware timestamp>` (stored mode only) and optional `resolution`.
+
+```bash
+curl 'http://localhost:8000/v1/load?provider=smard&zone=DE&start=2026-09-01&end=2026-09-02&resolution=PT60M'
+curl 'http://localhost:8000/v1/load?provider=smard&mode=stored&zone=DE&start=2026-09-01&end=2026-09-02'
+curl 'http://localhost:8000/v1/history/load?provider=smard&zone=DE&start=2026-09-01&end=2026-09-02'
+```
+
+History requires configured storage and returns `{data: [{id, recorded_at, series}]}`.
+Flow history uses `from_zone` and `to_zone`. Query `mode=stored&as_of=...` to limit
+history to captures known at that instant; resolution never changes raw history.
+
 Intelligence endpoints also include `renewable-share`, `residual-load`,
 `price-spread` and `anomalies`. Data responses use `{data, meta}`; metadata includes
 source, requested interval, count, scope, warnings and attribution. Domain errors
@@ -102,7 +203,7 @@ use `{error: {code, message}}`; invalid FastAPI parameters use HTTP 422 validati
 
 - **Renewable share:** renewable output / reported total output × 100. Renewable
   categories: solar, both winds, biomass, geothermal, run-of-river and reservoir
-  hydro, marine and other renewable. Pumped storage, energy storage and mixed
+  hydro, aggregated SMARD hydro, marine and other renewable. Pumped storage, energy storage and mixed
   waste are excluded from the numerator. Zero/missing totals produce null.
 - **Residual load:** load minus reported solar and wind. If a variable technology
   appears anywhere in the returned interval, it must be present at the timestamp.
@@ -129,6 +230,7 @@ Raw metrics are also available in `gridscope.intelligence.metrics` without HTTP 
 ## Examples
 
 ```bash
+uv run python examples/germany_history.py --start 2026-09-01 --end 2026-09-02
 uv run python examples/austria_prices.py --start 2026-09-01 --end 2026-09-02
 uv run python examples/austria_system.py --start 2026-09-01 --end 2026-09-02
 uv sync --group examples
@@ -151,7 +253,8 @@ uv run pytest
 Unit and integration tests require no token. To verify all four datasets live:
 
 ```bash
-RUN_LIVE_ENTSOE_TESTS=1 uv run pytest -m live -v
+RUN_LIVE_ENTSOE_TESTS=1 uv run pytest tests/integration/test_live.py -m live -v
+RUN_LIVE_V02_TESTS=1 uv run pytest tests/integration/test_live_v02.py -m live -v
 ```
 
 Optional `GRIDSCOPE_LIVE_START` and `GRIDSCOPE_LIVE_END` override the live test dates.
@@ -165,7 +268,14 @@ docker run --rm --env-file .env -p 8000:8000 gridscope
 ```
 
 The container runs as a non-root user. Only the API and its runtime dependencies
-are installed. An external database is unnecessary.
+are installed. An external database is unnecessary. To keep SQLite history across
+container replacements, use a named volume:
+
+```bash
+docker run --rm --env-file .env -p 8000:8000 \
+  -e GRIDSCOPE_STORAGE_PATH=/app/data/gridscope.sqlite3 \
+  -v gridscope-history:/app/data gridscope
+```
 
 ## Provider behavior and provenance
 
@@ -177,17 +287,18 @@ multiple clients sharing a token must coordinate their aggregate rate. Long
 A bounded in-memory response cache keeps up to 128 query responses for 300 seconds.
 It is per client/process, retains original retrieval timestamps and expires lazily.
 Set `GRIDSCOPE_CACHE_TTL_SECONDS=0` to disable it; call the ENTSO-E provider's
-`clear_cache()` to invalidate it. It does not persist across restarts. Historical
+`clear_cache()` to invalidate it. The response cache does not persist across restarts; configured SQLite snapshots do. Historical
 provider revisions become visible after expiry. Tokens never enter cache keys.
 
-Points retain ENTSO-E document, revision, series, curve, dataset and retrieval time.
+Points retain provider document, revision, series, curve, dataset and retrieval time.
 A03 expansion follows provider-defined constant blocks; it is not interpolation.
 
 Attribute data to **ENTSO-E Transparency Platform** and identify GridScope's
 normalization/derived calculations. The current free-reuse list includes physical
 flows with exceptions; it does not establish blanket CC-BY permission for prices,
 actual load or generation. Their primary-owner rights require verification.
-See [provider sources and reuse notes](docs/providers.md) and `/v1/sources`.
+SMARD data uses CC BY 4.0 with credit **Bundesnetzagentur | SMARD.de** and an
+indication of changes. See [provider sources and reuse notes](docs/providers.md) and `/v1/sources`.
 This registry records source information, not legal advice.
 
 ## Current limitations
@@ -196,18 +307,22 @@ Live Austrian prices, load, generation and DE_LU→AT flows were verified on
 13 September 2026 for the UTC day 1 September 2026. Your own token is required.
 The Austrian system report also completed against live data.
 Docker configuration is included; local image validation depends on a running engine.
-No automated currency conversion, implicit resampling, forecast, persistent storage,
-authentication or full-market coverage guarantee. Austrian and DE_LU prices use
+No automated currency conversion, implicit resampling, forecast, authentication
+or full-market coverage guarantee. v0.2 live verification and limitations are recorded
+in [provider coverage](docs/providers.md#v02-coverage). ENTSO-E DK2 prices can contain
+ambiguous overlapping auctions and are rejected; SMARD DK2 prices were verified.
+Austrian and DE_LU prices use
 SDAC auction sequence 1. Exact duplicate price publications within a response are
-collapsed with their identifiers retained; conflicting overlaps are rejected. Very large replies are rejected.
-The v0.1 API is intended for local development, not a public multi-tenant service.
+collapsed with their identifiers retained; conflicting overlaps are rejected.
+Very large replies are rejected.
+The v0.2 API is intended for local development, not a public multi-tenant service.
 
 ## Roadmap
 
 | Version | Focus |
 | --- | --- |
 | v0.1 | Austria, ENTSO-E, normalized data, deterministic metrics, Python/REST |
-| v0.2 | Germany and neighbors, SMARD, historical persistence |
+| v0.2 | Germany and neighbors, SMARD, historical observations/revisions, explicit resampling |
 | v0.3 | Forecasting primitives, outages, balancing |
 | v0.4 | MCP adapter, webhooks, event detection |
 | v0.5 | GridScope dashboard |

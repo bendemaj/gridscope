@@ -14,3 +14,12 @@ build/
 .coverage
 htmlcov/
 .DS_Store
+
+# Local observation history (including SQLite journals).
+data/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*

@@ -1,11 +1,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 
 from gridscope import GridScope, __version__
+from gridscope.config import Settings
 from gridscope.errors import GridScopeError
 from gridscope.logging import configure_logging
 from gridscope.models import (
@@ -17,14 +18,26 @@ from gridscope.models import (
     MetricPoint,
     PricePoint,
     Series,
+    TimeResolution,
     Zone,
 )
 from gridscope.normalization.zones import ZONES
 from gridscope.registry.sources import SOURCES, SourceDataset
+from gridscope.storage import Snapshot
 
 
-async def get_client(request: Request) -> GridScope:
-    return request.app.state.gridscope  # type: ignore[no-any-return]
+async def get_client(
+    request: Request,
+    provider: Literal["entsoe", "smard"] | None = None,
+    mode: Literal["live", "stored"] = "live",
+    as_of: str | None = None,
+    resolution: TimeResolution | None = None,
+) -> GridScope:
+    clients: dict[str, GridScope] = request.app.state.clients
+    selected = provider or request.app.state.default_provider
+    if selected not in clients:
+        clients[selected] = GridScope(selected, settings=request.app.state.settings)
+    return clients[selected].with_options(mode=mode, as_of=as_of, resolution=resolution)
 
 
 Client = Annotated[GridScope, Depends(get_client)]
@@ -35,16 +48,27 @@ def create_app(client: GridScope | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configure_logging()
-        app.state.gridscope = client or GridScope()
-        yield
-        if client is None:
-            await app.state.gridscope.aclose()
+        settings = Settings()
+        default_provider = (
+            getattr(client.provider, "name", settings.provider).lower()
+            if client
+            else settings.provider
+        )
+        clients = {default_provider: client or GridScope(settings=settings)}
+        app.state.clients, app.state.settings = clients, settings
+        app.state.default_provider = default_provider
+        try:
+            yield
+        finally:
+            for owned in clients.values():
+                if owned is not client:
+                    await owned.aclose()
 
     app = FastAPI(
         title="GridScope",
         version=__version__,
         lifespan=lifespan,
-        description="Austria-first normalized electricity data. Intervals are [start, end) in UTC.",
+        description="European electricity data and history. Intervals are [start, end) in UTC.",
     )
 
     @app.exception_handler(GridScopeError)
@@ -64,6 +88,23 @@ def create_app(client: GridScope | None = None) -> FastAPI:
     @app.get("/v1/sources")
     async def sources() -> dict[str, list[SourceDataset]]:
         return {"data": SOURCES}
+
+    @app.get("/v1/history/{dataset}")
+    def history(
+        client: Client,
+        dataset: Literal["prices", "load", "generation", "flows"],
+        start: str,
+        end: str,
+        zone: str | None = None,
+        from_zone: str | None = None,
+        to_zone: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    ) -> dict[str, list[Snapshot]]:
+        return {
+            "data": client.history(
+                dataset, start, end, zone=zone, from_zone=from_zone, to_zone=to_zone, limit=limit
+            )
+        }
 
     @app.get("/v1/prices")
     async def prices(client: Client, start: str, end: str, zone: str = "AT") -> Series[PricePoint]:

@@ -32,6 +32,7 @@ RENEWABLES = VARIABLE_RENEWABLES | frozenset(
         GenerationType.GEOTHERMAL,
         GenerationType.HYDRO_RUN_OF_RIVER,
         GenerationType.HYDRO_RESERVOIR,
+        GenerationType.HYDRO,
         GenerationType.MARINE,
         GenerationType.OTHER_RENEWABLE,
     }

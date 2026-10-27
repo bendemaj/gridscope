@@ -8,6 +8,7 @@ RESOLUTIONS = {
     "PT30M": timedelta(minutes=30),
     "PT60M": timedelta(hours=1),
     "PT1H": timedelta(hours=1),
+    "P1D": timedelta(days=1),
 }
 
 

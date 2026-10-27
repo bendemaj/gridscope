@@ -44,3 +44,12 @@ class MalformedResponse(GridScopeError):
 class ProviderRejected(GridScopeError):
     code = "provider_rejected_request"
     status_code = 502
+
+
+class UnsupportedDataset(InvalidQuery):
+    code = "unsupported_dataset"
+
+
+class StorageUnavailable(GridScopeError):
+    code = "storage_unavailable"
+    status_code = 503

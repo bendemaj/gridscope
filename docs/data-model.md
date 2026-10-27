@@ -1,9 +1,11 @@
-# Unified Grid Schema v0.1
+# Unified Grid Schema v0.2
 
 Every point carries an aware UTC `timestamp` (interval start), nullable finite
 `value`, explicit `unit`, ISO `resolution`, `source`, `source_dataset`, UTC
 `retrieved_at`, `quality` and notes. Optional source document/revision/series/curve
-fields preserve provider provenance. Price points also retain the auction sequence
+fields preserve provider provenance. Explicitly resampled points also retain
+`input_provenance`: source, dataset, document, revision, series, original resolution
+and retrieval time for each contributing publication. Price points also retain the auction sequence
 and identifiers of exact duplicate price publications collapsed within a response. Pydantic models forbid unknown fields and
 are frozen; model validation normalizes aware timestamps to UTC.
 
@@ -41,3 +43,26 @@ energy mix including imports. Pumping consumption is excluded from generation.
 Net imports require both directional observations for every selected border at
 each timestamp. Missing directions are not equivalent to zero. All metric
 alignment is exact, with no implicit resampling. Rolling windows reset across gaps.
+
+## v0.2 area and aggregation rules
+
+`Zone.area_type` distinguishes `country` (DE, LU) from `bidding_zone`. Provider EICs
+and SMARD filter IDs stay inside their respective adapters. DE country production
+is never relabeled as DE_LU; prices require the appropriate bidding zone.
+
+SMARD's `hydro` category is aggregated renewable hydro, distinct from ENTSO-E's
+`hydro_run_of_river` and `hydro_reservoir`. It does not contain pumped storage; the
+source's separate pumping generation filter maps to `hydro_pumped_storage`. SMARD
+filter IDs are retained as `production_code`, and `source_series` records the filter
+and reporting region. SMARD `source_revision` records chart creation milliseconds.
+
+Resampling supports PT15M, PT30M, PT60M and P1D targets. It uses duration-weighted
+means for MW and EUR/MWh. P1D aggregation is exactly 24 UTC hours; it is distinct
+from a timezone-aware daily price spread. Complete aggregates are `derived`; gaps,
+explicit nulls or incomplete inputs produce null `incomplete` outputs. No category,
+provider, zone or flow direction is summed into another. Upsampling and source
+intervals crossing target boundaries are rejected.
+
+History uses `Snapshot {id, recorded_at, series}`. Its series remains the original
+normalized query, including provenance and warnings. IDs identify local captures;
+they are not provider revision identifiers. See [history semantics](storage.md).
